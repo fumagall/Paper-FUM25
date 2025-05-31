@@ -1,0 +1,1 @@
+cbsub -J create_histogram -n 48 -q BatchXL <<< "python create_histogram.py --num_cores 48" 

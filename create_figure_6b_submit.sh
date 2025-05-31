@@ -1,0 +1,1 @@
+cbsub -n 48 -q BatchXL python create_figure_6b.py 50000 <<< ""

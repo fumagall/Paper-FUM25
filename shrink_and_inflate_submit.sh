@@ -1,0 +1,2 @@
+cbsub -n 64 -J short_shrink_and_inflate -q BatchXL python shrink_and_inflate.py --n_samples 1000 --n_threads 64 --use_02_model <<< ""
+cbsub -n 64 -J long_shrink_and_inflate -q BatchXL python shrink_and_inflate.py --n_samples 1000 --n_threads 64 <<< ""

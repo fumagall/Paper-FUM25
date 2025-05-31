@@ -1,0 +1,201 @@
+#!/bin/bash
+
+#Default values
+
+QUEUE="Batch24"
+MAX_TOTAL_JOBS_IN_QUEUE=9900
+MAX_JOBS_AT_ONCE=200
+JOB_NAME=""
+ERROR_FORMAT="err_%N_%c_%J.txt" #%J is the id (look at manpage of bsub), %N is the job name and %c is the counter, %v to add the input line (values)
+OUTPUT_FORMAT="out_%N_%c_%J.txt" #%J is the id (look at manpage of bsub), %N is the job name and %c is the counter, %v to add the input line (values)
+WAIT_TIME="2s"
+WORKING_DIR="$(pwd)"
+NUM_SHARED_MEM_CORES="span[hosts=1] affinity[core]"
+VERBOSE=false
+# -------------------------- Only the values above are ment to be changed by the user :) ----------------------------------------
+
+# --------------- deal with optinal arguments ---------------
+
+BSUB_ARGS=()
+TAG="$(uuidgen | tr -d '-' | cut -c1-6)"
+while getopts "h?a:q:c:o:m:J:t:g:n:v" opt; do
+  case "$opt" in
+    h| \?) 
+    	echo """Usage 1: One Program, multiple data: 
+
+        * cbsub \"program.sh -f flag\" < inputs
+        * (or) ./generate_inputs.sh | cbsub \"program.sh -f flag\"
+
+    Each line of the input_file is inputed as a set of arguments for the given program. 
+    The input file could also be a program, then each printed line will be inputed.
+
+Usage 2: Multiple Programs, multiple data: 
+
+        * cbsub < programs_file
+        * (or) programs_file | cbsub
+
+    Each line of the programs_file is executed as a program. 
+    The input file could also be a program, then each printed line will be inputed.
+
+Flags:
+    -q [QUEUE]                  Sets the queue.                             default: $QUEUE
+    -c [WORKING_DIR]            Sets the working directory.                 default: $WORKING_DIR (current directory)
+    -J [JOB_NAME]               Sets the Job name.                          default: $JOB_NAME (user)
+    -t [WAITING_TIME]           Sets the wait time using sleep.             default: $WAIT_TIME
+    -o [ERROR_AND_OUT_FOLDER]   Sets output and error folder. Use %J, %N, 
+                                or %c for the Job's id, name, or counter.   default: $ERROR_AND_OUT_FOLDER
+    -m [MAX_JOBS_AT_ONCE]       Maximal Jobs that can be submitted at once. default: $MAX_JOBS_AT_ONCE
+    -a [...]                    Redirects [...] as arguments to bsub.
+    -n [NumSharedMemCores]      Sets the number of shared memory.           default: bsub -n 1 $NUM_SHARED_MEM_CORES
+    -g [TAG]                    Do not use.
+    -v                          Verbose mode.                               default: $VERBOSE
+	
+All defaults can be changed at the beginning of the script. Use cbsub_cluster to let this script run on the cluste instead of this terminal.
+    """
+        
+	exit 0
+        ;;
+    a)
+        BSUB_ARGS+=$OPTARG
+	;;
+    q)
+	QUEUE="$OPTARG"
+	;;
+    t)
+	WAIT_TIME="$OPTARG"
+	;;
+    m)
+	MAX_JOBS_AT_ONCE="$OPTARG"
+	;;
+    o)
+	ERROR_AND_OUT_FOLDER="$OPTARG"
+	;;
+    v)
+    VERBOSE=true
+    ;;
+    c)
+	WORKING_DIR="$OPTARG"
+    	;;
+    J) 
+	JOB_NAME="$OPTARG"
+        ;;
+    n) 
+        BSUB_ARGS+=(-n $OPTARG -R "$NUM_SHARED_MEM_CORES")
+        ;;
+    g)  # Hidden option to 
+	TAG="$OPTARG"
+        ;;	 	
+ esac
+done
+
+shift $((OPTIND - 1))
+
+timestamp=$(date +%m_%d_%H:%M:%S)
+ERROR_AND_OUT_FOLDER="./log/${JOB_NAME}${timestamp}_$TAG"
+# --------------- deal with inputs ---------------
+
+if [ $# -gt 0 ]; then 
+    PROGRAM="$@"
+    echo "Each input line will be interpred as an input to the program."
+else
+    PROGRAM=""
+    echo "No program provided, each input line will be interpred as program."
+fi
+
+# --------------- define function to check if we can submit jobs ---------------
+job_can_be_sheduled() {
+    # check if maximum of queue was reached
+    number_of_total_running_jobs=$(bjobs -p -sum -u "all" -q $QUEUE| tail -n 1 | awk '{for(i=1; i<=NF; i++) sum += $i} END {print sum}')
+
+    # if [ $number_of_total_running_jobs -gt $MAX_TOTAL_JOBS_IN_QUEUE ]; then
+    #     echo false
+    #     return 0
+    # fi
+    
+    number_of_running_jobs=$(bjobs -sum -p -u "$USER" -q $QUEUE -J "${TAG}*"| tail -n 1 | awk '{for(i=1; i<=NF; i++) sum += $i} END {print sum}')
+    
+
+    if [ $number_of_running_jobs -lt $MAX_JOBS_AT_ONCE ]; then  
+        echo true
+        return 0
+    fi
+
+    echo false
+    return 0
+}
+
+# --------------- define a function for pretty animations ---------------
+
+animation=0 #for the annimation
+
+animate() {
+    case $animation in
+    0) 
+        echo -n "wait to commit /"
+        animation=1
+        ;;
+    1)
+        echo -ne "\rwait to commit -"
+        animation=2
+        ;;
+    2)
+        echo -ne "\rwait to commit \\"
+        animation=3
+        ;;
+    3)
+        echo -ne "\rwait to commit |"
+        animation=4
+        ;;
+    4)
+        echo -ne "\rwait to commit /"
+        animation=1
+        ;;
+esac
+}
+
+# --------------- main loop to submit jobs ---------------
+
+mkdir -p  "$ERROR_AND_OUT_FOLDER"
+
+job_counter=1 #variable to count jobs. Must start with 1 cause bsub [..] syntax
+
+echo "The Job Name is $JOB_NAME"
+echo "The TAG is $TAG"
+echo "Log Folder is $ERROR_AND_OUT_FOLDER"
+
+while read line; do # read each line of input file
+
+    animation=0 # reset animation
+
+    #wait until we can shedule another job
+    while [ "$(job_can_be_sheduled)" == "false" ]; do
+        animate
+        sleep $WAIT_TIME
+    done
+
+    echo -ne "\r" #reset terminal after animation
+
+    # define jobname, error and output
+    this_job_name="${TAG}_${JOB_NAME}_${job_counter}"
+
+    tmp="${ERROR_FORMAT/\%c/$job_counter}" # subsitute %c
+    tmp_line="${line/\ /_}"
+    tmp="${tmp/\%v/$tmp_line}" # subsitute %v
+    error_name="${ERROR_AND_OUT_FOLDER}/${tmp/\%N/$JOB_NAME}" # subsitute %N
+    tmp="${OUTPUT_FORMAT/\%c/$job_counter}" # subsitute %c
+    tmp_line="${line/\ /_}"
+    tmp="${tmp/\%v/$tmp_line}" # subsitute %v
+    output_name="${ERROR_AND_OUT_FOLDER}/${tmp/\%N/$JOB_NAME}" # subsitute %N
+
+    # submit
+    bsub_out=$(bsub "${BSUB_ARGS[@]}" -cwd $WORKING_DIR -q $QUEUE -J $this_job_name -e $error_name -o $output_name <<EOF
+$PROGRAM $line
+EOF
+)
+
+    if [[ "$VERBOSE" = true || $? -ne 0 ]]; then
+        echo "${job_counter} $bsub_out  Name: TAG_${JOB_NAME}_${job_counter} TAG: $TAG  Program: $PROGRAM $line"
+    fi
+
+    ((job_counter++)) # increment counter
+done 

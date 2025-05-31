@@ -1,0 +1,2 @@
+cbsub -n 64 -J short_sweep_theta -q BatchXL python sweep_theta_1d.py --n_samples 500 --n_threads 64 --use_02_model <<< ""
+cbsub -n 64 -J long_sweep_theta -q BatchXL python sweep_theta_1d.py --n_samples 200 --n_threads 64 <<< ""

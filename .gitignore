@@ -1,0 +1,15 @@
+data
+log
+*.jpg
+*.png
+*.pdf
+*.svg
+*.eps
+*.txt
+*.pyc
+results
+untracked
+*.npy
+*.npz
+try_*.ipynb
+.*/
