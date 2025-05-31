@@ -8,15 +8,7 @@ The bash script just calls the python file to submit it on a cluster using cbsub
 
 After a sucesful run, the jupyter file can be executed to show too corrisponding figure.
 
-Be aware that files depend on each other, if you do not want to use to presimulated data (see data section below)
-
-# Create Figures without Data
-
-For all figures except 6b, you can just run the .ipynb file in jupyter lab with the paper name.
-
-For the figure 6b, the data was too large to up load, and thus, it must be simulated first. For this, run create_figure_6b_submit.sh to run the script via cbsub (LSF) on a cluster or to run it locally execute create_figure_6b.py file directly with the arguments specified in the create_figure_6b_submit.sh file. Afterwards, the .ipynb file can be run.
-
-# Data creation
+# Data generation (20 GB)
 
 The script do depend on each other, and thus, execuion order is important.
 
@@ -29,3 +21,7 @@ The script do depend on each other, and thus, execuion order is important.
 7. run measure_vs_spectral_radius_submit.sh
 
 Finally, you reproduced all the files in data and results! :)
+
+# Create Figures without Data
+
+After data generation, you can just run the .ipynb file in jupyter lab with the corresponding paper name.
